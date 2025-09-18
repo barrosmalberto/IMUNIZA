@@ -1,0 +1,315 @@
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
+from webdriver_manager.chrome import ChromeDriverManager
+from plyer import notification
+
+import time
+from pathlib import Path
+
+login_url = "https://accounts.google.com/signin"
+success_url = "myaccount.google.com"
+mapa_url = "https://www.google.com/maps/d/u/0/edit?mid=1JUGEQeXqo6isqa1SGu04fgQlM-jvFI0&ll=-22.85874925109873%2C-43.80178082275391&z=12"
+folder_name = "Planilhas Alimentadoras"
+
+def send_notification(title, message):
+    notification.notify(
+        title=title,
+        message=message,
+        app_name="Google Maps Automation",
+        timeout=10
+    )
+
+# Configura o WebDriver
+def configure_webdriver(user_agent="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"):
+    options = Options()
+    options.add_argument(f"user-agent={user_agent}")
+    user_data_dir = Path.home() / "google_map_automation" 
+    options.add_argument(f"--user-data-dir={user_data_dir}")
+    # Gerencia automaticamente a versão correta do ChromeDriver
+    chromedriver_path = ChromeDriverManager().install()
+
+    driver = uc.Chrome(driver_executable_path=chromedriver_path, options=options)
+    return driver
+
+# Aguarda login manual
+def wait_for_manual_login(driver, login_url, success_url, timeout=600):
+    driver.get(login_url)
+    print("Por favor, faça o login manual.")
+    try:
+        WebDriverWait(driver, timeout).until(EC.url_contains(success_url))
+        print("Login bem-sucedido.")
+    except Exception as e:
+        print(f"Erro no login: {e}")
+        return False
+    return True
+
+# Automação da tabela (por imunizante)
+
+def execute_replace_data(data_name, driver, wait, has_to_open_folder=True):
+
+    def click_data_action_element():
+        print("Localizando elemento de ação do dado...")
+        data_action_element = driver.find_element(By.ID, 'featurelist-scrollable-container')
+        data_elements = data_action_element.find_elements(By.CLASS_NAME, 'pbTTYe-tlSJBe-LYNcwc')
+        print("Elemento de ação do dado localizado.")
+
+        current_data_name_index = -1
+    
+        for index, data in enumerate(data_elements):
+            try:
+                element = data.find_element(By.XPATH, f".//*[@data-tooltip='{data_name}']")
+                print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ Elemento encontrado:", element.text)
+
+                current_data_name_index = index
+                break
+            except Exception as e:
+                pass
+        
+        if current_data_name_index == -1:
+            raise Exception("Dado não encontrado.")
+
+        print("Localizando opções de ação...")
+        data_action_element = wait.until(
+            EC.element_to_be_clickable((By.XPATH, f'//*[@id="ly{current_data_name_index}-layer-header"]/div[3]' ))
+        )
+        print("Opções de ação localizadas.")
+        print("Clicando no menu de ação...")
+        ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+        data_action_element.click()
+        print("Menu de ação clicado.")
+
+    def click_reimport_merge():
+        print("Localizando a opção 'Reimportar e mesclar'...")
+
+        # Aguarda o elemento com id="layerview-menu" estar presente
+        layerview_menu = wait.until(
+            EC.visibility_of_element_located((By.ID, "layerview-menu"))
+        )
+
+        # Procura pelo elemento dentro do layerview-menu
+        reimport_button = layerview_menu.find_element(
+            By.XPATH, './/div[@role="menuitem" and contains(., "Reimportar e mesclar")]'
+        )
+        
+        reimport_button.click()
+        print("Opção 'Reimportar e mesclar' clicada.")
+
+    def click_reimport():
+        print("Localizando botão 'Reimportar'...")
+        reimport_button = wait.until(
+            EC.element_to_be_clickable((By.XPATH, '//div[@role="menuitem" and contains(., "Reimportar") and not(contains(., "Reimportar e mesclar"))]'))
+        )
+        reimport_button.click()
+        print("Botão 'Reimportar' clicado.")
+
+    def click_replace_all():
+        print("Localizando botão 'Substituir todos os itens'...")
+        replace_all_button = wait.until(
+            EC.element_to_be_clickable((By.XPATH, '//div[@role="menuitem" and contains(., "Substituir todos os itens")]'))
+        )
+        replace_all_button.click()
+        print("Botão 'Substituir todos os itens' clicado.")
+
+    def wait_for_modal():
+        print("Aguardando o modal estar visível...")
+        wait.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "div.fFW7wc.XKSfm-Sx9Kwc.picker-dialog"))
+        )
+        print("Modal visível.")
+
+    def switch_to_iframe():
+        print("Localizando iframe...")
+        modal = wait.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "div.fFW7wc.XKSfm-Sx9Kwc.picker-dialog"))
+        )
+        iframe = modal.find_element(By.CSS_SELECTOR, "iframe")
+        driver.switch_to.frame(iframe)
+        print("Contexto alterado para o iframe.")
+
+    def click_google_drive():
+        print("Localizando botão 'Google Drive'...")
+        google_drive_button = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//button[@id='1' and contains(., 'Google Drive')]"))
+        )
+        google_drive_button.click()
+        print("Botão 'Google Drive' clicado.")
+
+    def click_shared_with_me():
+        print("Localizando botão 'Compartilhado Comigo'...")
+        shared_with_me_button = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "#yDmH0d > div.Q6HCU.IzuY1c > div.H0U9m > div:nth-child(1) > div > div > div:nth-child(2)"))
+        )
+        shared_with_me_button.click()
+        print("Botão 'Compartilhado Comigo' clicado.")
+
+    def click_cedaps_folder():
+        if has_to_open_folder:
+            time.sleep(0.5)
+            print("Localizando pasta 'Planilhas Alimentadoras'...")
+            cedaps_folder = wait.until(
+                EC.element_to_be_clickable((By.XPATH, f"//div[@data-target='doc' and contains(., '{folder_name}')]"))
+            )
+            cedaps_folder.click()
+            ActionChains(driver).send_keys(Keys.ENTER).perform()
+            print("Pasta 'Planilhas Alimentadoras' clicada.")
+
+    def click_data_file():
+        print("Localizando arquivo do dado...")
+        data_file = wait.until(
+            EC.element_to_be_clickable((By.XPATH, f"//div[@data-target='doc' and contains(., '{data_name}')]"))
+        )
+        print("Arquivo do dado localizado.", data_file.text)
+        data_file.click()
+        print("Arquivo do dado clicado.")
+
+    def click_insert():
+        print("Localizando botão 'Inserir'...")
+        insert_button = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Inserir')]"))
+        )
+        insert_button.click()
+        print("Botão 'Inserir' clicado.")
+
+    def switch_to_default_content():
+        print("Retornando ao contexto original fora do iframe...")
+        driver.switch_to.default_content()
+        print("Contexto original restaurado.")
+
+    def wait_for_import():
+        print("Aguardando os dados serem importados...")
+        wait.until_not(
+            EC.visibility_of_element_located((By.XPATH, "//div[contains(text(), 'Buscando documento no Google Drive.')]"))
+        )
+        print("Dados importados com sucesso.")
+        time.sleep(5)
+
+    steps = [
+        click_data_action_element,
+        click_reimport_merge,
+        click_reimport,
+        click_replace_all,
+        wait_for_modal,
+        switch_to_iframe,
+        click_google_drive,
+        click_shared_with_me,
+        click_cedaps_folder,
+        click_data_file,
+        click_insert,
+        switch_to_default_content,
+        wait_for_import
+    ]
+
+    step_index = 0
+    error_count = 0
+    while step_index < len(steps):
+        try:
+            time.sleep(.7)
+            steps[step_index]()
+            step_index += 1
+
+        except Exception as e:
+            error_count += 1
+            print(f"Erro no passo {step_index}: {e}")
+           
+            if(error_count >= 3):
+                print("Erro recorrente. Abortando a execução.")
+                send_notification("Erro na automação do Google Maps", f"Erro no passo {step_index}: {e}")
+                break            
+
+            print("Atualizando a janela e redefinindo o driver...")
+            driver.refresh()
+            has_to_open_folder = True
+
+            try:
+                driver.switch_to.default_contenxt()
+            except:
+                pass
+            step_index = 0
+            
+
+
+def execute_table_automation(driver):
+    wait = WebDriverWait(driver, 2)  # Ajuste o tempo que for necessário
+   
+    try:
+        imported_data = []
+        # Passo 1: Localizar todos os dados já importados
+        try:
+            print("Passo 1 Aguardando: Localizando dados importados...")
+            imported_data = driver.find_elements(By.CSS_SELECTOR, "#featurelist-scrollable-container .pbTTYe-tlSJBe-LYNcwc")
+            print(f"Passo 1 concluído: {len(imported_data)} dados importados localizados.")
+        except Exception as e:
+            print(f"Erro no Passo 1: {e}")
+            return
+        
+        # Passo 2: Iniciando a substituição dos dados importados
+        try:
+            print("Passo 2 Aguardando: Abindo o menu de opções de ação...")
+            data_names = []
+            for index, data in enumerate(imported_data):
+                xpath = f'//*[@id="ly{index}-layer-header"]/div[2]'
+                print("Localizando título do dado... ", xpath)
+                wait.until(EC.text_to_be_present_in_element((By.XPATH, xpath), ""))
+                time.sleep(1)
+                data_name = driver.find_element(By.XPATH, xpath)
+
+                data_names.append(data_name.text)
+                print("Título do dado localizado:", data_name.text)
+                
+
+            print("Nomes dos dados localizados:", data_names)
+                
+            for index, data_name in enumerate(data_names):
+                has_to_open_folder = True
+                if index > 0:
+                    has_to_open_folder = False
+                print(f"Substituindo dados do imunizante: {data_name}")
+                execute_replace_data(data_name, driver, wait, has_to_open_folder)
+                
+                
+                print(f"Dados do imunizante {data_name} substituídos com sucesso.")
+                print("##########################################################")
+
+            send_notification("Automação do Google Maps", "Dados substituídos com sucesso.")
+    
+            
+        except Exception as e:
+            print(f"Erro no Passo 2: {e}")
+            return
+        
+    except Exception as e:
+        print(f"Erro geral na automação da tabela: {e}")
+
+    finally:
+        print("Automação da tabela finalizada.")
+    
+def main():
+  
+    driver = configure_webdriver()
+    
+    try:
+        # Passo 1: Login manual
+        if not wait_for_manual_login(driver, login_url, success_url):
+            return
+
+        # Passo 2: Navegação para a URL do mapa
+        driver.get(mapa_url)
+        print("URL do mapa carregada.")
+
+        # Passo 3: Automação da tabela
+        execute_table_automation(driver)
+
+        print("Automação concluída com sucesso.")
+
+        # Passo 4: Perguntar ao usuário se deseja executar novamente
+       
+    finally:
+        driver.quit()
+
+if __name__ == "__main__":
+    main()
